@@ -7,25 +7,40 @@ from shap_file_stremlit import *
 from train_functions import *
 from config import inference_model_name
 from streamlit_option_menu import option_menu
+import io
+import torch
+from unittest.mock import patch
+
+
+def load_model_on_cpu(path):
+    def load_storage(data):
+        return torch.load(
+            io.BytesIO(data),
+            map_location="cpu",
+            weights_only=False,
+        )
+
+    with patch("torch.storage._load_from_bytes", load_storage):
+        return joblib.load(path)
 
 
 st.set_page_config(layout="wide")
 
 st.markdown("""
     <style>
-    /* Стиль для всех кнопок в приложении */
+    /* Г‘ГІГЁГ«Гј Г¤Г«Гї ГўГ±ГҐГµ ГЄГ­Г®ГЇГ®ГЄ Гў ГЇГ°ГЁГ«Г®Г¦ГҐГ­ГЁГЁ */
     div.stButton > button:first-child {
-        background-color: #e52d27; /* Цвет фона */
-        color: white;               # Цвет текста
-        border-radius: 10px;        /* Скругление углов */
-        border: 2px solid #e52d27;  /* Граница */
+        background-color: #e52d27; /* Г–ГўГҐГІ ГґГ®Г­Г  */
+        color: white;               # Г–ГўГҐГІ ГІГҐГЄГ±ГІГ 
+        border-radius: 10px;        /* Г‘ГЄГ°ГіГЈГ«ГҐГ­ГЁГҐ ГіГЈГ«Г®Гў */
+        border: 2px solid #e52d27;  /* ГѓГ°Г Г­ГЁГ¶Г  */
         font-family: "Segoe UI", sans-serif;
         height: 3em;
-        width: 100%;                /* Растянуть на всю ширину колонки */
+        width: 100%;                /* ГђГ Г±ГІГїГ­ГіГІГј Г­Г  ГўГ±Гѕ ГёГЁГ°ГЁГ­Гі ГЄГ®Г«Г®Г­ГЄГЁ */
         transition: 0.3s;
     }
 
-    /* Эффект при наведении */
+    /* ГќГґГґГҐГЄГІ ГЇГ°ГЁ Г­Г ГўГҐГ¤ГҐГ­ГЁГЁ */
     div.stButton > button:first-child:hover {
         background-color: 	#bcbdbc;
         border-color: #bcbdbc;
@@ -34,35 +49,48 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Значения для интерфейса ------
-marital_dict = {'не в браке': 'single', 'в браке': 'married', 'в разводе': 'divorced'}
+# Г‡Г­Г Г·ГҐГ­ГЁГї Г¤Г«Гї ГЁГ­ГІГҐГ°ГґГҐГ©Г±Г  ------
+marital_dict = {'Г­ГҐ Гў ГЎГ°Г ГЄГҐ': 'single', 'Гў ГЎГ°Г ГЄГҐ': 'married', 'Гў Г°Г Г§ГўГ®Г¤ГҐ': 'divorced'}
 job_dict = {
-    'администратор': 'admin.', 'рабочий': 'blue-collar',
-    'предприниматель': 'entrepreneur', 'домохозяйка': 'housemaid',
-    'менеджмент / руководитель': 'management', 'пенсионер': 'retired',
-    'самозанятый': 'self-employed', 'занят в сфере услуг': 'services',
-    'студент': 'student', 'технический специалист': 'technician',
-    'безработный': 'unemployed', 'неизвестно': 'unknown'}
-education_dict = {'начальное': 'primary', 'среднее': 'secondary',
-                  'высшее': 'tertiary', 'неизвестно': 'unknown'}
-yes_or_no_dict = {'да, есть': 'yes', 'нет': 'no'}
-contact_dict = {'мобильный телефон (смартфон)': 'cellular', 'стационарный телефон': 'telephone',
-                'неизвестно': 'unknown'}
-poutcome_dict = {'успех': 'success', 'отказ': 'failure', 'другое': 'other', 'неизвестно': 'unknown'}
-months_dict = {'январь': 'jan', 'февраль': 'feb', 'март': 'mar', 'апрель': 'apr',
-               'май': 'may', 'июнь': 'jun', 'июль': 'jul', 'август': 'aug', 'сентябрь': 'sep',
-               'октябрь': 'oct', 'ноябрь': 'nov', 'декабрь': 'dec'}
+    'Г Г¤Г¬ГЁГ­ГЁГ±ГІГ°Г ГІГ®Г°': 'admin.', 'Г°Г ГЎГ®Г·ГЁГ©': 'blue-collar',
+    'ГЇГ°ГҐГ¤ГЇГ°ГЁГ­ГЁГ¬Г ГІГҐГ«Гј': 'entrepreneur', 'Г¤Г®Г¬Г®ГµГ®Г§ГїГ©ГЄГ ': 'housemaid',
+    'Г¬ГҐГ­ГҐГ¤Г¦Г¬ГҐГ­ГІ / Г°ГіГЄГ®ГўГ®Г¤ГЁГІГҐГ«Гј': 'management', 'ГЇГҐГ­Г±ГЁГ®Г­ГҐГ°': 'retired',
+    'Г±Г Г¬Г®Г§Г Г­ГїГІГ»Г©': 'self-employed', 'Г§Г Г­ГїГІ Гў Г±ГґГҐГ°ГҐ ГіГ±Г«ГіГЈ': 'services',
+    'Г±ГІГіГ¤ГҐГ­ГІ': 'student', 'ГІГҐГµГ­ГЁГ·ГҐГ±ГЄГЁГ© Г±ГЇГҐГ¶ГЁГ Г«ГЁГ±ГІ': 'technician',
+    'ГЎГҐГ§Г°Г ГЎГ®ГІГ­Г»Г©': 'unemployed', 'Г­ГҐГЁГ§ГўГҐГ±ГІГ­Г®': 'unknown'}
+education_dict = {'Г­Г Г·Г Г«ГјГ­Г®ГҐ': 'primary', 'Г±Г°ГҐГ¤Г­ГҐГҐ': 'secondary',
+                  'ГўГ»Г±ГёГҐГҐ': 'tertiary', 'Г­ГҐГЁГ§ГўГҐГ±ГІГ­Г®': 'unknown'}
+yes_or_no_dict = {'Г¤Г , ГҐГ±ГІГј': 'yes', 'Г­ГҐГІ': 'no'}
+contact_dict = {'Г¬Г®ГЎГЁГ«ГјГ­Г»Г© ГІГҐГ«ГҐГґГ®Г­ (Г±Г¬Г Г°ГІГґГ®Г­)': 'cellular', 'Г±ГІГ Г¶ГЁГ®Г­Г Г°Г­Г»Г© ГІГҐГ«ГҐГґГ®Г­': 'telephone',
+                'Г­ГҐГЁГ§ГўГҐГ±ГІГ­Г®': 'unknown'}
+poutcome_dict = {'ГіГ±ГЇГҐГµ': 'success', 'Г®ГІГЄГ Г§': 'failure', 'Г¤Г°ГіГЈГ®ГҐ': 'other', 'Г­ГҐГЁГ§ГўГҐГ±ГІГ­Г®': 'unknown'}
+months_dict = {'ГїГ­ГўГ Г°Гј': 'jan', 'ГґГҐГўГ°Г Г«Гј': 'feb', 'Г¬Г Г°ГІ': 'mar', 'Г ГЇГ°ГҐГ«Гј': 'apr',
+               'Г¬Г Г©': 'may', 'ГЁГѕГ­Гј': 'jun', 'ГЁГѕГ«Гј': 'jul', 'Г ГўГЈГіГ±ГІ': 'aug', 'Г±ГҐГ­ГІГїГЎГ°Гј': 'sep',
+               'Г®ГЄГІГїГЎГ°Гј': 'oct', 'Г­Г®ГїГЎГ°Гј': 'nov', 'Г¤ГҐГЄГ ГЎГ°Гј': 'dec'}
 # ---------
 num_of_models = 15
 
 
 models = []
+
 for model_type in ["TabM", "CatBoost", "LightGBM"]:
     for idx in range(1, 6):
-        model = joblib.load(fr"models/{model_type}_{inference_model_name}_fold_{idx}.pkl")
+        path = (
+            f"models/{model_type}_"
+            f"{inference_model_name}_fold_{idx}.pkl"
+        )
+
+        if model_type == "TabM":
+            model = load_model_on_cpu(path)
+            model.set_params(device="cpu")
+        else:
+            model = joblib.load(path)
+
         models.append(model)
 
-meta_model = joblib.load(fr"models/meta_model_logistic_regression.pkl")
+meta_model = joblib.load(
+    "models/meta_model_logistic_regression.pkl"
+)
 
 
 params = ['age', 'job', 'marital', 'education', 'default', 'balance',
@@ -82,12 +110,12 @@ with col2:
     st.image('image.svg', width=40)
 
 selected = option_menu(
-    menu_title='МОДЕЛЬ ДЛЯ ОЦЕНКИ ВЕРОЯТНОСТИ ПОДПИСАНИЯ ДОГОВОРА НА ОТКРЫТИЕ ДЕПОЗИТА',
-    options=['Одиночный прогноз', 'Аналитика', 'Множественный прогноз'],  # Названия вкладок
-    icons=["file-binary-fill", "bar-chart-fill", "filetype-csv"],  # Иконки для вкладок
-    menu_icon="stack",  # Иконка самого меню
-    default_index=0,  # Какая вкладка открыта по умолчанию
-    orientation="horizontal",  # Делает меню горизонтальным (как вкладки)
+    menu_title='ГЊГЋГ„Г…Г‹Гњ Г„Г‹Гџ ГЋГ–Г…ГЌГЉГ€ Г‚Г…ГђГЋГџГ’ГЌГЋГ‘Г’Г€ ГЏГЋГ„ГЏГ€Г‘ГЂГЌГ€Гџ Г„ГЋГѓГЋГ‚ГЋГђГЂ ГЌГЂ ГЋГ’ГЉГђГ›Г’Г€Г… Г„Г…ГЏГЋГ‡Г€Г’ГЂ',
+    options=['ГЋГ¤ГЁГ­Г®Г·Г­Г»Г© ГЇГ°Г®ГЈГ­Г®Г§', 'ГЂГ­Г Г«ГЁГІГЁГЄГ ', 'ГЊГ­Г®Г¦ГҐГ±ГІГўГҐГ­Г­Г»Г© ГЇГ°Г®ГЈГ­Г®Г§'],  # ГЌГ Г§ГўГ Г­ГЁГї ГўГЄГ«Г Г¤Г®ГЄ
+    icons=["file-binary-fill", "bar-chart-fill", "filetype-csv"],  # Г€ГЄГ®Г­ГЄГЁ Г¤Г«Гї ГўГЄГ«Г Г¤Г®ГЄ
+    menu_icon="stack",  # Г€ГЄГ®Г­ГЄГ  Г±Г Г¬Г®ГЈГ® Г¬ГҐГ­Гѕ
+    default_index=0,  # ГЉГ ГЄГ Гї ГўГЄГ«Г Г¤ГЄГ  Г®ГІГЄГ°Г»ГІГ  ГЇГ® ГіГ¬Г®Г«Г·Г Г­ГЁГѕ
+    orientation="horizontal",  # Г„ГҐГ«Г ГҐГІ Г¬ГҐГ­Гѕ ГЈГ®Г°ГЁГ§Г®Г­ГІГ Г«ГјГ­Г»Г¬ (ГЄГ ГЄ ГўГЄГ«Г Г¤ГЄГЁ)
     styles={
         "container": {"padding": "0!important", "background-color": "#fafafa"},
         "icon": {"font-size": "20px"},
@@ -105,47 +133,47 @@ selected = option_menu(
             "margin": "0px",
             "--hover-color": "#eee"}})
 
-if selected == 'Одиночный прогноз':
-    st.write("Введите параметры клиента:")
+if selected == 'ГЋГ¤ГЁГ­Г®Г·Г­Г»Г© ГЇГ°Г®ГЈГ­Г®Г§':
+    st.write("Г‚ГўГҐГ¤ГЁГІГҐ ГЇГ Г°Г Г¬ГҐГІГ°Г» ГЄГ«ГЁГҐГ­ГІГ :")
     col_1, col_2 = st.columns(2)
 
     with col_1:
         st.divider()
-        age = st.slider("Возраст (age)", min_value=18, max_value=95, value=35)
+        age = st.slider("Г‚Г®Г§Г°Г Г±ГІ (age)", min_value=18, max_value=95, value=35)
         st.divider()
-        job_rus = st.selectbox("Тип занятости (job)",
-                               ['администратор', 'рабочий', 'предприниматель', 'домохозяйка',
-                                'менеджер / руководитель', 'пенсионер', 'самозанятый', 'занят в сфере услуг',
-                                'студент', 'технический специалист',
-                                'безработный', 'неизвестно'])
+        job_rus = st.selectbox("Г’ГЁГЇ Г§Г Г­ГїГІГ®Г±ГІГЁ (job)",
+                               ['Г Г¤Г¬ГЁГ­ГЁГ±ГІГ°Г ГІГ®Г°', 'Г°Г ГЎГ®Г·ГЁГ©', 'ГЇГ°ГҐГ¤ГЇГ°ГЁГ­ГЁГ¬Г ГІГҐГ«Гј', 'Г¤Г®Г¬Г®ГµГ®Г§ГїГ©ГЄГ ',
+                                'Г¬ГҐГ­ГҐГ¤Г¦ГҐГ° / Г°ГіГЄГ®ГўГ®Г¤ГЁГІГҐГ«Гј', 'ГЇГҐГ­Г±ГЁГ®Г­ГҐГ°', 'Г±Г Г¬Г®Г§Г Г­ГїГІГ»Г©', 'Г§Г Г­ГїГІ Гў Г±ГґГҐГ°ГҐ ГіГ±Г«ГіГЈ',
+                                'Г±ГІГіГ¤ГҐГ­ГІ', 'ГІГҐГµГ­ГЁГ·ГҐГ±ГЄГЁГ© Г±ГЇГҐГ¶ГЁГ Г«ГЁГ±ГІ',
+                                'ГЎГҐГ§Г°Г ГЎГ®ГІГ­Г»Г©', 'Г­ГҐГЁГ§ГўГҐГ±ГІГ­Г®'])
         job = job_dict[job_rus]
 
         st.divider()
-        marital_rus = st.selectbox("Семейное положение (marital)",
-                                   ['не в браке', 'в браке', 'в разводе'])
+        marital_rus = st.selectbox("Г‘ГҐГ¬ГҐГ©Г­Г®ГҐ ГЇГ®Г«Г®Г¦ГҐГ­ГЁГҐ (marital)",
+                                   ['Г­ГҐ Гў ГЎГ°Г ГЄГҐ', 'Гў ГЎГ°Г ГЄГҐ', 'Гў Г°Г Г§ГўГ®Г¤ГҐ'])
         marital = marital_dict[marital_rus]
         st.divider()
-        education_rus = st.selectbox("Уровень образования (education)",
-                                     ['начальное', 'среднее', 'высшее', 'неизвестно'])
+        education_rus = st.selectbox("Г“Г°Г®ГўГҐГ­Гј Г®ГЎГ°Г Г§Г®ГўГ Г­ГЁГї (education)",
+                                     ['Г­Г Г·Г Г«ГјГ­Г®ГҐ', 'Г±Г°ГҐГ¤Г­ГҐГҐ', 'ГўГ»Г±ГёГҐГҐ', 'Г­ГҐГЁГ§ГўГҐГ±ГІГ­Г®'])
         education = education_dict[education_rus]
 
         st.divider()
-        default_rus = st.selectbox("Есть ли просрочка платежа по кредиту? (default)",
-                                   ['да, есть', 'нет'])
+        default_rus = st.selectbox("Г…Г±ГІГј Г«ГЁ ГЇГ°Г®Г±Г°Г®Г·ГЄГ  ГЇГ«Г ГІГҐГ¦Г  ГЇГ® ГЄГ°ГҐГ¤ГЁГІГі? (default)",
+                                   ['Г¤Г , ГҐГ±ГІГј', 'Г­ГҐГІ'])
         default = yes_or_no_dict[default_rus]
 
         st.divider()
-        balance = st.slider("Среднегодовой баланс в переводе на Евро (balance)", min_value=-8019, max_value=99717,
+        balance = st.slider("Г‘Г°ГҐГ¤Г­ГҐГЈГ®Г¤Г®ГўГ®Г© ГЎГ Г«Г Г­Г± Гў ГЇГҐГ°ГҐГўГ®Г¤ГҐ Г­Г  Г…ГўГ°Г® (balance)", min_value=-8019, max_value=99717,
                             value=0, step=1)
         st.divider()
-        housing_rus = st.selectbox("Есть ли жилищный кредит? (housing)",
-                                   ['да, есть', 'нет'])
+        housing_rus = st.selectbox("Г…Г±ГІГј Г«ГЁ Г¦ГЁГ«ГЁГ№Г­Г»Г© ГЄГ°ГҐГ¤ГЁГІ? (housing)",
+                                   ['Г¤Г , ГҐГ±ГІГј', 'Г­ГҐГІ'])
         housing = yes_or_no_dict[housing_rus]
 
         st.divider()
 
-        loan_rus = st.selectbox("Есть ли потребительский кредит? (loan)",
-                                ['да, есть', 'нет'])
+        loan_rus = st.selectbox("Г…Г±ГІГј Г«ГЁ ГЇГ®ГІГ°ГҐГЎГЁГІГҐГ«ГјГ±ГЄГЁГ© ГЄГ°ГҐГ¤ГЁГІ? (loan)",
+                                ['Г¤Г , ГҐГ±ГІГј', 'Г­ГҐГІ'])
         loan = yes_or_no_dict[loan_rus]
 
         st.divider()
@@ -153,36 +181,36 @@ if selected == 'Одиночный прогноз':
     with col_2:
 
         st.divider()
-        contact_rus = st.selectbox("Тип контакта (contact)",
-                                   ['мобильный телефон (смартфон)', 'стационарный телефон', 'неизвестно'])
+        contact_rus = st.selectbox("Г’ГЁГЇ ГЄГ®Г­ГІГ ГЄГІГ  (contact)",
+                                   ['Г¬Г®ГЎГЁГ«ГјГ­Г»Г© ГІГҐГ«ГҐГґГ®Г­ (Г±Г¬Г Г°ГІГґГ®Г­)', 'Г±ГІГ Г¶ГЁГ®Г­Г Г°Г­Г»Г© ГІГҐГ«ГҐГґГ®Г­', 'Г­ГҐГЁГ§ГўГҐГ±ГІГ­Г®'])
         contact = contact_dict[contact_rus]
 
         st.divider()
-        day = st.slider("Последний день контакта за месяц (day)", 1, 31, 15)
+        day = st.slider("ГЏГ®Г±Г«ГҐГ¤Г­ГЁГ© Г¤ГҐГ­Гј ГЄГ®Г­ГІГ ГЄГІГ  Г§Г  Г¬ГҐГ±ГїГ¶ (day)", 1, 31, 15)
         st.divider()
-        month_rus = st.selectbox("Последний месяц контакта за год (month)",
-                                 ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
-                                  'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'])
+        month_rus = st.selectbox("ГЏГ®Г±Г«ГҐГ¤Г­ГЁГ© Г¬ГҐГ±ГїГ¶ ГЄГ®Г­ГІГ ГЄГІГ  Г§Г  ГЈГ®Г¤ (month)",
+                                 ['ГїГ­ГўГ Г°Гј', 'ГґГҐГўГ°Г Г«Гј', 'Г¬Г Г°ГІ', 'Г ГЇГ°ГҐГ«Гј', 'Г¬Г Г©', 'ГЁГѕГ­Гј',
+                                  'ГЁГѕГ«Гј', 'Г ГўГЈГіГ±ГІ', 'Г±ГҐГ­ГІГїГЎГ°Гј', 'Г®ГЄГІГїГЎГ°Гј', 'Г­Г®ГїГЎГ°Гј', 'Г¤ГҐГЄГ ГЎГ°Гј'])
         month = months_dict[month_rus]
 
         st.divider()
-        duration = st.slider("Продолжительность последнего контакта в секундах (duration)", min_value=1, max_value=4918,
+        duration = st.slider("ГЏГ°Г®Г¤Г®Г«Г¦ГЁГІГҐГ«ГјГ­Г®Г±ГІГј ГЇГ®Г±Г«ГҐГ¤Г­ГҐГЈГ® ГЄГ®Г­ГІГ ГЄГІГ  Гў Г±ГҐГЄГіГ­Г¤Г Гµ (duration)", min_value=1, max_value=4918,
                              value=1, step=1)
         st.divider()
-        campaign = st.slider("Количество контактов, совершённых в ходе кампании (campaign)", 1, 63, 1)
+        campaign = st.slider("ГЉГ®Г«ГЁГ·ГҐГ±ГІГўГ® ГЄГ®Г­ГІГ ГЄГІГ®Гў, Г±Г®ГўГҐГ°ГёВёГ­Г­Г»Гµ Гў ГµГ®Г¤ГҐ ГЄГ Г¬ГЇГ Г­ГЁГЁ (campaign)", 1, 63, 1)
         st.divider()
-        pdays = st.slider("Количество дней с момента последнего обращения (pdays)",
+        pdays = st.slider("ГЉГ®Г«ГЁГ·ГҐГ±ГІГўГ® Г¤Г­ГҐГ© Г± Г¬Г®Г¬ГҐГ­ГІГ  ГЇГ®Г±Г«ГҐГ¤Г­ГҐГЈГ® Г®ГЎГ°Г Г№ГҐГ­ГЁГї (pdays)",
                           -1, 871, 0)
         st.divider()
-        previous = st.slider("Количество контактов, совершённых до этой кампании (previous)", 0, 200, 0)
+        previous = st.slider("ГЉГ®Г«ГЁГ·ГҐГ±ГІГўГ® ГЄГ®Г­ГІГ ГЄГІГ®Гў, Г±Г®ГўГҐГ°ГёВёГ­Г­Г»Гµ Г¤Г® ГЅГІГ®Г© ГЄГ Г¬ГЇГ Г­ГЁГЁ (previous)", 0, 200, 0)
         st.divider()
-        poutcome_rus = st.selectbox("Результат предыдущей маркетинговой кампании (poutcome)",
-                                    ['успех', 'отказ', 'другое', 'неизвестно'])
+        poutcome_rus = st.selectbox("ГђГҐГ§ГіГ«ГјГІГ ГІ ГЇГ°ГҐГ¤Г»Г¤ГіГ№ГҐГ© Г¬Г Г°ГЄГҐГІГЁГ­ГЈГ®ГўГ®Г© ГЄГ Г¬ГЇГ Г­ГЁГЁ (poutcome)",
+                                    ['ГіГ±ГЇГҐГµ', 'Г®ГІГЄГ Г§', 'Г¤Г°ГіГЈГ®ГҐ', 'Г­ГҐГЁГ§ГўГҐГ±ГІГ­Г®'])
         poutcome = poutcome_dict[poutcome_rus]
 
         st.divider()
 
-    if st.button("Сделать прогноз"):
+    if st.button("Г‘Г¤ГҐГ«Г ГІГј ГЇГ°Г®ГЈГ­Г®Г§"):
         features = np.array([[age, job, marital, education, default, balance,
                               housing, loan, contact, day, month, duration,
                               campaign, pdays, previous, poutcome]])
@@ -193,10 +221,10 @@ if selected == 'Одиночный прогноз':
 
         df = create_new_features(df)
 
-        # подготовка данных
+        # ГЇГ®Г¤ГЈГ®ГІГ®ГўГЄГ  Г¤Г Г­Г­Г»Гµ
         df = preprocessing(df)
 
-        new_features = df.values  # Для моделей, которые используют созданные фичи вместо features
+        new_features = df.values  # Г„Г«Гї Г¬Г®Г¤ГҐГ«ГҐГ©, ГЄГ®ГІГ®Г°Г»ГҐ ГЁГ±ГЇГ®Г«ГјГ§ГіГѕГІ Г±Г®Г§Г¤Г Г­Г­Г»ГҐ ГґГЁГ·ГЁ ГўГ¬ГҐГ±ГІГ® features
 
         probs = {'TabM': [], 'CatBoost': [], 'LightGBM': []}
 
@@ -221,10 +249,10 @@ if selected == 'Одиночный прогноз':
 
         if prob > 0.37:
             color1, color2 = '#32e111', '#2bc10f'
-            text = 'Клиент сделает депозит'
+            text = 'ГЉГ«ГЁГҐГ­ГІ Г±Г¤ГҐГ«Г ГҐГІ Г¤ГҐГЇГ®Г§ГЁГІ'
         else:
             color1, color2 = '#e52d27', '#b31217'
-            text = 'Клиент не сделает депозит'
+            text = 'ГЉГ«ГЁГҐГ­ГІ Г­ГҐ Г±Г¤ГҐГ«Г ГҐГІ Г¤ГҐГЇГ®Г§ГЁГІ'
 
         st.markdown(f"""
             <style>
@@ -280,21 +308,21 @@ if selected == 'Одиночный прогноз':
             else:
                 pass
 
-if selected == 'Аналитика':
+if selected == 'ГЂГ­Г Г«ГЁГІГЁГЄГ ':
     for idx in range(5):
-        st.write(f'Решающие признаки для {idx + 1}-й модели')
+        st.write(f'ГђГҐГёГ ГѕГ№ГЁГҐ ГЇГ°ГЁГ§Г­Г ГЄГЁ Г¤Г«Гї {idx + 1}-Г© Г¬Г®Г¤ГҐГ«ГЁ')
         st.components.v1.html(
             open(f"shap_force_{idx}.html", 'r', encoding='utf-8').read(),
             height=170,
             scrolling=True)
 
-if selected == 'Множественный прогноз':
-    uploaded = st.file_uploader("Загрузите данные в виде csv-файла", type=["csv"])
+if selected == 'ГЊГ­Г®Г¦ГҐГ±ГІГўГҐГ­Г­Г»Г© ГЇГ°Г®ГЈГ­Г®Г§':
+    uploaded = st.file_uploader("Г‡Г ГЈГ°ГіГ§ГЁГІГҐ Г¤Г Г­Г­Г»ГҐ Гў ГўГЁГ¤ГҐ csv-ГґГ Г©Г«Г ", type=["csv"])
 
     if uploaded:
         df = pd.read_csv(uploaded)
 
-        # подготовка данных
+        # ГЇГ®Г¤ГЈГ®ГІГ®ГўГЄГ  Г¤Г Г­Г­Г»Гµ
         df = create_new_features(df)
         df = preprocessing(df)
         new_features = df.values
@@ -328,4 +356,4 @@ if selected == 'Множественный прогноз':
         st.write(df[['probability', 'result']])
 
         df.to_csv(r"prediction_results.csv", index=False)
-        st.info("Результаты сохранены в prediction_results.csv")
+        st.info("ГђГҐГ§ГіГ«ГјГІГ ГІГ» Г±Г®ГµГ°Г Г­ГҐГ­Г» Гў prediction_results.csv")
