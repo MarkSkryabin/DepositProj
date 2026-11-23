@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from pathlib import Path
 import seaborn as sns
 import matplotlib
 from sklearn import metrics
@@ -348,7 +349,7 @@ def preprocessing(df):
     :param df: датафрейм для предсказания
     :return: подготовленный df
     """
-    train = pd.read_csv("train.csv")
+    train = pd.read_csv(Path(__file__).resolve().with_name("train.csv"))
     train = create_new_features(train)
 
     y_train = train["y"]
@@ -369,12 +370,14 @@ def preprocessing(df):
     return df
 
 
-def get_selected_features(file='confirmed_features.txt'):
+def get_selected_features(file=None):
     """
     :param file: Путь к txt файлу с признаками
     :return: list с признаками
     """
-    with (open(file, 'r') as f):
+    if file is None:
+        file = Path(__file__).resolve().with_name('confirmed_features.txt')
+    with (open(file, 'r', encoding='utf-8') as f):
         selected_features = f.read()
         selected_features = selected_features.replace("' ", ' ').replace('[', '').replace(']', '').replace("'",
                                                                                                            '').replace(

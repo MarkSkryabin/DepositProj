@@ -4,7 +4,8 @@ streamlit-option-menu==0.4.0
 
 # --- Работа с данными ---
 pandas==2.3.3
-numpy
+numpy==1.26.4
+pyarrow==18.1.0
 openpyxl==3.1.5
 scipy==1.11.4
 
@@ -15,7 +16,7 @@ lightgbm==4.6.0
 xgboost==3.2.0
 
 # --- Интерпретация моделей ---
-shap
+shap==0.48.0
 BorutaShap
 
 # --- Подбор гиперпараметров ---

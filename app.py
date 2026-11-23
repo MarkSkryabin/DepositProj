@@ -1,46 +1,31 @@
-# -*- coding: cp1251 -*-
+# -*- coding: utf-8 -*-
 import numpy as np
 import pandas as pd
 import streamlit as st
-import joblib
-from shap_file_stremlit import *
-from train_functions import *
+from shap_file_stremlit import build_force_plot
+from train_functions import create_new_features, preprocessing
 from config import inference_model_name
+from model_inference import BASE_DIR, PREDICTION_THRESHOLD, load_model_bundle, predict_ensemble
 from streamlit_option_menu import option_menu
-import io
-import torch
-from unittest.mock import patch
-
-
-def load_model_on_cpu(path):
-    def load_storage(data):
-        return torch.load(
-            io.BytesIO(data),
-            map_location="cpu",
-            weights_only=False,
-        )
-
-    with patch("torch.storage._load_from_bytes", load_storage):
-        return joblib.load(path)
 
 
 st.set_page_config(layout="wide")
 
 st.markdown("""
     <style>
-    /* Ñòèëü äëÿ âñåõ êíîïîê â ïðèëîæåíèè */
+    /* Стиль для всех кнопок в приложении */
     div.stButton > button:first-child {
-        background-color: #e52d27; /* Öâåò ôîíà */
-        color: white;               # Öâåò òåêñòà
-        border-radius: 10px;        /* Ñêðóãëåíèå óãëîâ */
-        border: 2px solid #e52d27;  /* Ãðàíèöà */
+        background-color: #e52d27; /* Цвет фона */
+        color: white;               /* Цвет текста */
+        border-radius: 10px;        /* Скругление углов */
+        border: 2px solid #e52d27;  /* Граница */
         font-family: "Segoe UI", sans-serif;
         height: 3em;
-        width: 100%;                /* Ðàñòÿíóòü íà âñþ øèðèíó êîëîíêè */
+        width: 100%;                /* Растянуть на всю ширину колонки */
         transition: 0.3s;
     }
 
-    /* Ýôôåêò ïðè íàâåäåíèè */
+    /* Эффект при наведении */
     div.stButton > button:first-child:hover {
         background-color: 	#bcbdbc;
         border-color: #bcbdbc;
@@ -49,48 +34,31 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Çíà÷åíèÿ äëÿ èíòåðôåéñà ------
-marital_dict = {'íå â áðàêå': 'single', 'â áðàêå': 'married', 'â ðàçâîäå': 'divorced'}
+# Значения для интерфейса ------
+marital_dict = {'не в браке': 'single', 'в браке': 'married', 'в разводе': 'divorced'}
 job_dict = {
-    'àäìèíèñòðàòîð': 'admin.', 'ðàáî÷èé': 'blue-collar',
-    'ïðåäïðèíèìàòåëü': 'entrepreneur', 'äîìîõîçÿéêà': 'housemaid',
-    'ìåíåäæìåíò / ðóêîâîäèòåëü': 'management', 'ïåíñèîíåð': 'retired',
-    'ñàìîçàíÿòûé': 'self-employed', 'çàíÿò â ñôåðå óñëóã': 'services',
-    'ñòóäåíò': 'student', 'òåõíè÷åñêèé ñïåöèàëèñò': 'technician',
-    'áåçðàáîòíûé': 'unemployed', 'íåèçâåñòíî': 'unknown'}
-education_dict = {'íà÷àëüíîå': 'primary', 'ñðåäíåå': 'secondary',
-                  'âûñøåå': 'tertiary', 'íåèçâåñòíî': 'unknown'}
-yes_or_no_dict = {'äà, åñòü': 'yes', 'íåò': 'no'}
-contact_dict = {'ìîáèëüíûé òåëåôîí (ñìàðòôîí)': 'cellular', 'ñòàöèîíàðíûé òåëåôîí': 'telephone',
-                'íåèçâåñòíî': 'unknown'}
-poutcome_dict = {'óñïåõ': 'success', 'îòêàç': 'failure', 'äðóãîå': 'other', 'íåèçâåñòíî': 'unknown'}
-months_dict = {'ÿíâàðü': 'jan', 'ôåâðàëü': 'feb', 'ìàðò': 'mar', 'àïðåëü': 'apr',
-               'ìàé': 'may', 'èþíü': 'jun', 'èþëü': 'jul', 'àâãóñò': 'aug', 'ñåíòÿáðü': 'sep',
-               'îêòÿáðü': 'oct', 'íîÿáðü': 'nov', 'äåêàáðü': 'dec'}
+    'администратор': 'admin.', 'рабочий': 'blue-collar',
+    'предприниматель': 'entrepreneur', 'домохозяйка': 'housemaid',
+    'менеджер / руководитель': 'management', 'пенсионер': 'retired',
+    'самозанятый': 'self-employed', 'занят в сфере услуг': 'services',
+    'студент': 'student', 'технический специалист': 'technician',
+    'безработный': 'unemployed', 'неизвестно': 'unknown'}
+education_dict = {'начальное': 'primary', 'среднее': 'secondary',
+                  'высшее': 'tertiary', 'неизвестно': 'unknown'}
+yes_or_no_dict = {'да, есть': 'yes', 'нет': 'no'}
+contact_dict = {'мобильный телефон (смартфон)': 'cellular', 'стационарный телефон': 'telephone',
+                'неизвестно': 'unknown'}
+poutcome_dict = {'успех': 'success', 'отказ': 'failure', 'другое': 'other', 'неизвестно': 'unknown'}
+months_dict = {'январь': 'jan', 'февраль': 'feb', 'март': 'mar', 'апрель': 'apr',
+               'май': 'may', 'июнь': 'jun', 'июль': 'jul', 'август': 'aug', 'сентябрь': 'sep',
+               'октябрь': 'oct', 'ноябрь': 'nov', 'декабрь': 'dec'}
 # ---------
-num_of_models = 15
+@st.cache_resource
+def get_models(experiment):
+    return load_model_bundle(experiment)
 
 
-models = []
-
-for model_type in ["TabM", "CatBoost", "LightGBM"]:
-    for idx in range(1, 6):
-        path = (
-            f"models/{model_type}_"
-            f"{inference_model_name}_fold_{idx}.pkl"
-        )
-
-        if model_type == "TabM":
-            model = load_model_on_cpu(path)
-            model.set_params(device="cpu")
-        else:
-            model = joblib.load(path)
-
-        models.append(model)
-
-meta_model = joblib.load(
-    "models/meta_model_logistic_regression.pkl"
-)
+models, meta_model = get_models(inference_model_name)
 
 
 params = ['age', 'job', 'marital', 'education', 'default', 'balance',
@@ -107,15 +75,15 @@ st.write("")
 col1, col2 = st.columns([20, 1])
 
 with col2:
-    st.image('image.svg', width=40)
+    st.image(str(BASE_DIR / 'image.svg'), width=40)
 
 selected = option_menu(
-    menu_title='ÌÎÄÅËÜ ÄËß ÎÖÅÍÊÈ ÂÅÐÎßÒÍÎÑÒÈ ÏÎÄÏÈÑÀÍÈß ÄÎÃÎÂÎÐÀ ÍÀ ÎÒÊÐÛÒÈÅ ÄÅÏÎÇÈÒÀ',
-    options=['Îäèíî÷íûé ïðîãíîç', 'Àíàëèòèêà', 'Ìíîæåñòâåííûé ïðîãíîç'],  # Íàçâàíèÿ âêëàäîê
-    icons=["file-binary-fill", "bar-chart-fill", "filetype-csv"],  # Èêîíêè äëÿ âêëàäîê
-    menu_icon="stack",  # Èêîíêà ñàìîãî ìåíþ
-    default_index=0,  # Êàêàÿ âêëàäêà îòêðûòà ïî óìîë÷àíèþ
-    orientation="horizontal",  # Äåëàåò ìåíþ ãîðèçîíòàëüíûì (êàê âêëàäêè)
+    menu_title='МОДЕЛЬ ДЛЯ ОЦЕНКИ ВЕРОЯТНОСТИ ПОДПИСАНИЯ ДОГОВОРА НА ОТКРЫТИЕ ДЕПОЗИТА',
+    options=['Одиночный прогноз', 'Аналитика', 'Множественный прогноз'],  # Названия вкладок
+    icons=["file-binary-fill", "bar-chart-fill", "filetype-csv"],  # Иконки для вкладок
+    menu_icon="stack",  # Иконка самого меню
+    default_index=0,  # Какая вкладка открыта по умолчанию
+    orientation="horizontal",  # Делает меню горизонтальным (как вкладки)
     styles={
         "container": {"padding": "0!important", "background-color": "#fafafa"},
         "icon": {"font-size": "20px"},
@@ -133,47 +101,44 @@ selected = option_menu(
             "margin": "0px",
             "--hover-color": "#eee"}})
 
-if selected == 'Îäèíî÷íûé ïðîãíîç':
-    st.write("Ââåäèòå ïàðàìåòðû êëèåíòà:")
+if selected == 'Одиночный прогноз':
+    st.write("Введите параметры клиента:")
     col_1, col_2 = st.columns(2)
 
     with col_1:
         st.divider()
-        age = st.slider("Âîçðàñò (age)", min_value=18, max_value=95, value=35)
+        age = st.slider("Возраст (age)", min_value=18, max_value=95, value=35)
         st.divider()
-        job_rus = st.selectbox("Òèï çàíÿòîñòè (job)",
-                               ['àäìèíèñòðàòîð', 'ðàáî÷èé', 'ïðåäïðèíèìàòåëü', 'äîìîõîçÿéêà',
-                                'ìåíåäæåð / ðóêîâîäèòåëü', 'ïåíñèîíåð', 'ñàìîçàíÿòûé', 'çàíÿò â ñôåðå óñëóã',
-                                'ñòóäåíò', 'òåõíè÷åñêèé ñïåöèàëèñò',
-                                'áåçðàáîòíûé', 'íåèçâåñòíî'])
+        job_rus = st.selectbox("Тип занятости (job)",
+                               list(job_dict))
         job = job_dict[job_rus]
 
         st.divider()
-        marital_rus = st.selectbox("Ñåìåéíîå ïîëîæåíèå (marital)",
-                                   ['íå â áðàêå', 'â áðàêå', 'â ðàçâîäå'])
+        marital_rus = st.selectbox("Семейное положение (marital)",
+                                   ['не в браке', 'в браке', 'в разводе'])
         marital = marital_dict[marital_rus]
         st.divider()
-        education_rus = st.selectbox("Óðîâåíü îáðàçîâàíèÿ (education)",
-                                     ['íà÷àëüíîå', 'ñðåäíåå', 'âûñøåå', 'íåèçâåñòíî'])
+        education_rus = st.selectbox("Уровень образования (education)",
+                                     ['начальное', 'среднее', 'высшее', 'неизвестно'])
         education = education_dict[education_rus]
 
         st.divider()
-        default_rus = st.selectbox("Åñòü ëè ïðîñðî÷êà ïëàòåæà ïî êðåäèòó? (default)",
-                                   ['äà, åñòü', 'íåò'])
+        default_rus = st.selectbox("Есть ли просрочка платежа по кредиту? (default)",
+                                   ['да, есть', 'нет'])
         default = yes_or_no_dict[default_rus]
 
         st.divider()
-        balance = st.slider("Ñðåäíåãîäîâîé áàëàíñ â ïåðåâîäå íà Åâðî (balance)", min_value=-8019, max_value=99717,
+        balance = st.slider("Среднегодовой баланс в переводе на Евро (balance)", min_value=-8019, max_value=99717,
                             value=0, step=1)
         st.divider()
-        housing_rus = st.selectbox("Åñòü ëè æèëèùíûé êðåäèò? (housing)",
-                                   ['äà, åñòü', 'íåò'])
+        housing_rus = st.selectbox("Есть ли жилищный кредит? (housing)",
+                                   ['да, есть', 'нет'])
         housing = yes_or_no_dict[housing_rus]
 
         st.divider()
 
-        loan_rus = st.selectbox("Åñòü ëè ïîòðåáèòåëüñêèé êðåäèò? (loan)",
-                                ['äà, åñòü', 'íåò'])
+        loan_rus = st.selectbox("Есть ли потребительский кредит? (loan)",
+                                ['да, есть', 'нет'])
         loan = yes_or_no_dict[loan_rus]
 
         st.divider()
@@ -181,36 +146,36 @@ if selected == 'Îäèíî÷íûé ïðîãíîç':
     with col_2:
 
         st.divider()
-        contact_rus = st.selectbox("Òèï êîíòàêòà (contact)",
-                                   ['ìîáèëüíûé òåëåôîí (ñìàðòôîí)', 'ñòàöèîíàðíûé òåëåôîí', 'íåèçâåñòíî'])
+        contact_rus = st.selectbox("Тип контакта (contact)",
+                                   ['мобильный телефон (смартфон)', 'стационарный телефон', 'неизвестно'])
         contact = contact_dict[contact_rus]
 
         st.divider()
-        day = st.slider("Ïîñëåäíèé äåíü êîíòàêòà çà ìåñÿö (day)", 1, 31, 15)
+        day = st.slider("Последний день контакта за месяц (day)", 1, 31, 15)
         st.divider()
-        month_rus = st.selectbox("Ïîñëåäíèé ìåñÿö êîíòàêòà çà ãîä (month)",
-                                 ['ÿíâàðü', 'ôåâðàëü', 'ìàðò', 'àïðåëü', 'ìàé', 'èþíü',
-                                  'èþëü', 'àâãóñò', 'ñåíòÿáðü', 'îêòÿáðü', 'íîÿáðü', 'äåêàáðü'])
+        month_rus = st.selectbox("Последний месяц контакта за год (month)",
+                                 ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+                                  'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'])
         month = months_dict[month_rus]
 
         st.divider()
-        duration = st.slider("Ïðîäîëæèòåëüíîñòü ïîñëåäíåãî êîíòàêòà â ñåêóíäàõ (duration)", min_value=1, max_value=4918,
+        duration = st.slider("Продолжительность последнего контакта в секундах (duration)", min_value=1, max_value=4918,
                              value=1, step=1)
         st.divider()
-        campaign = st.slider("Êîëè÷åñòâî êîíòàêòîâ, ñîâåðø¸ííûõ â õîäå êàìïàíèè (campaign)", 1, 63, 1)
+        campaign = st.slider("Количество контактов, совершённых в ходе кампании (campaign)", 1, 63, 1)
         st.divider()
-        pdays = st.slider("Êîëè÷åñòâî äíåé ñ ìîìåíòà ïîñëåäíåãî îáðàùåíèÿ (pdays)",
+        pdays = st.slider("Количество дней с момента последнего обращения (pdays)",
                           -1, 871, 0)
         st.divider()
-        previous = st.slider("Êîëè÷åñòâî êîíòàêòîâ, ñîâåðø¸ííûõ äî ýòîé êàìïàíèè (previous)", 0, 200, 0)
+        previous = st.slider("Количество контактов, совершённых до этой кампании (previous)", 0, 200, 0)
         st.divider()
-        poutcome_rus = st.selectbox("Ðåçóëüòàò ïðåäûäóùåé ìàðêåòèíãîâîé êàìïàíèè (poutcome)",
-                                    ['óñïåõ', 'îòêàç', 'äðóãîå', 'íåèçâåñòíî'])
+        poutcome_rus = st.selectbox("Результат предыдущей маркетинговой кампании (poutcome)",
+                                    ['успех', 'отказ', 'другое', 'неизвестно'])
         poutcome = poutcome_dict[poutcome_rus]
 
         st.divider()
 
-    if st.button("Ñäåëàòü ïðîãíîç"):
+    if st.button("Сделать прогноз"):
         features = np.array([[age, job, marital, education, default, balance,
                               housing, loan, contact, day, month, duration,
                               campaign, pdays, previous, poutcome]])
@@ -221,38 +186,17 @@ if selected == 'Îäèíî÷íûé ïðîãíîç':
 
         df = create_new_features(df)
 
-        # ïîäãîòîâêà äàííûõ
+        # подготовка данных
         df = preprocessing(df)
 
-        new_features = df.values  # Äëÿ ìîäåëåé, êîòîðûå èñïîëüçóþò ñîçäàííûå ôè÷è âìåñòî features
+        prob = float(predict_ensemble(models, meta_model, df)[0])
 
-        probs = {'TabM': [], 'CatBoost': [], 'LightGBM': []}
-
-        for idx in range(num_of_models):
-            new_features_copy = new_features.copy()
-            if idx <= 4:
-                probs['TabM'].append(models[idx].predict_proba(df)[0][1])
-            elif 5 <= idx <= 9:
-                probs['CatBoost'].append(models[idx].predict_proba(new_features)[0][1])
-            else:
-                cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
-                for col in cat_cols:
-                    df[col] = df[col].astype("category")
-                probs['LightGBM'].append(models[idx].predict_proba(df)[0][1])
-
-        probs = {'TabM': [np.mean(probs['TabM'])],
-                 'CatBoost': [np.mean(probs['CatBoost'])],
-                 'LightGBM': [np.mean(probs['LightGBM'])]}
-        probs = pd.DataFrame(probs)
-
-        prob = meta_model.predict_proba(probs)[0][1]
-
-        if prob > 0.37:
+        if prob >= PREDICTION_THRESHOLD:
             color1, color2 = '#32e111', '#2bc10f'
-            text = 'Êëèåíò ñäåëàåò äåïîçèò'
+            text = 'Клиент сделает депозит'
         else:
             color1, color2 = '#e52d27', '#b31217'
-            text = 'Êëèåíò íå ñäåëàåò äåïîçèò'
+            text = 'Клиент не сделает депозит'
 
         st.markdown(f"""
             <style>
@@ -297,63 +241,53 @@ if selected == 'Îäèíî÷íûé ïðîãíîç':
             </div>
             """, unsafe_allow_html=True)
 
-        categorical_features = df.select_dtypes(
-            include=["object", "string", "category"]).columns.tolist()
+        st.session_state.pop('shap_plots', None)
+        st.session_state['shap_plots'] = [
+            build_force_plot(model, df, list(df.columns))
+            for model in models[5:10]
+        ]
 
-        params = list(df.columns)
-        for idx in range(num_of_models):
-            if 5 <= idx <= 9:
-                html_file = save_force_plot(models[idx], df, categorical_features, params,
-                                            f"shap_force_{idx-5}.html")
-            else:
-                pass
+if selected == 'Аналитика':
+    plots = st.session_state.get('shap_plots', [])
+    if not plots:
+        st.info('Сначала выполните одиночный прогноз, чтобы увидеть вклад признаков.')
+    for idx, html in enumerate(plots, start=1):
+        st.write(f'Решающие признаки для {idx}-й модели')
+        st.components.v1.html(html, height=170, scrolling=True)
 
-if selected == 'Àíàëèòèêà':
-    for idx in range(5):
-        st.write(f'Ðåøàþùèå ïðèçíàêè äëÿ {idx + 1}-é ìîäåëè')
-        st.components.v1.html(
-            open(f"shap_force_{idx}.html", 'r', encoding='utf-8').read(),
-            height=170,
-            scrolling=True)
-
-if selected == 'Ìíîæåñòâåííûé ïðîãíîç':
-    uploaded = st.file_uploader("Çàãðóçèòå äàííûå â âèäå csv-ôàéëà", type=["csv"])
+if selected == 'Множественный прогноз':
+    uploaded = st.file_uploader("Загрузите данные в виде csv-файла", type=["csv"])
 
     if uploaded:
-        df = pd.read_csv(uploaded)
+        try:
+            df = pd.read_csv(uploaded)
+        except (ValueError, UnicodeDecodeError) as error:
+            st.error(f'Не удалось прочитать CSV: {error}')
+            st.stop()
 
-        # ïîäãîòîâêà äàííûõ
+        missing = sorted(set(params) - set(df.columns))
+        if missing:
+            st.error('В CSV отсутствуют обязательные столбцы: ' + ', '.join(missing))
+            st.stop()
+        if df.empty:
+            st.error('В CSV нет строк для прогноза.')
+            st.stop()
+        for column in numeric_features:
+            df[column] = pd.to_numeric(df[column], errors='coerce')
+        if not np.isfinite(df[numeric_features].to_numpy()).all():
+            st.error('Числовые столбцы CSV содержат пропуски или некорректные значения.')
+            st.stop()
+
+        # подготовка данных
         df = create_new_features(df)
         df = preprocessing(df)
-        new_features = df.values
-
-        probs = {'TabM': [], 'CatBoost': [], 'LightGBM': []}
-
-        for idx in range(num_of_models):
-            new_features_copy = new_features.copy()
-            if idx <= 4:
-                probs['TabM'].append(models[idx].predict_proba(df)[:, 1])
-            elif 5 <= idx <= 9:
-                probs['CatBoost'].append(models[idx].predict_proba(new_features)[:, 1])
-            else:
-                cat_cols = df.select_dtypes(include=["object"]).columns.tolist()
-                for col in cat_cols:
-                    df[col] = df[col].astype("category")
-                probs['LightGBM'].append(models[idx].predict_proba(df)[:, 1])
-
-        tabm_mean = np.mean(probs['TabM'], axis=0) if probs['TabM'] else np.zeros(len(df))
-        cat_mean = np.mean(probs['CatBoost'], axis=0) if probs['CatBoost'] else np.zeros(len(df))
-        lgb_mean = np.mean(probs['LightGBM'], axis=0) if probs['LightGBM'] else np.zeros(len(df))
-        matrix_data = np.column_stack([tabm_mean, cat_mean, lgb_mean])
-
-        probs_df = pd.DataFrame(matrix_data, columns=['TabM', 'CatBoost', 'LightGBM'])
-
-        prob = meta_model.predict_proba(probs_df.values)[:, 1]
+        prob = predict_ensemble(models, meta_model, df)
 
         df["probability"] = prob
-        df['result'] = (df['probability'] >= 0.37).astype(int)
+        df['result'] = (df['probability'] >= PREDICTION_THRESHOLD).astype(int)
 
         st.write(df[['probability', 'result']])
 
-        df.to_csv(r"prediction_results.csv", index=False)
-        st.info("Ðåçóëüòàòû ñîõðàíåíû â prediction_results.csv")
+        st.download_button('Скачать результаты CSV',
+                           df.to_csv(index=False).encode('utf-8-sig'),
+                           file_name='prediction_results.csv', mime='text/csv')
