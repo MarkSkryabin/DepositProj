@@ -1,24 +1,25 @@
 import catboost
 import shap
 import pandas as pd
+import io
+from model_inference import catboost_frame
 
 
-def save_force_plot(model, x, cat_features, params, filename="shap_force.html"):
+def build_force_plot(model, x, params):
     """
     Сохраняет force_plot для одного объекта в HTML.
-    :param filename: - название для сохранения файла
     :param params: - все названия фичей (list)
     :param x: - входные данные модели (вектор-строка)
-    :param cat_features: - категориальные фичи (list)
     :param model - предварительно обученная модель;
-    :return название сохранённого файла
+    :return: HTML-график без записи общих для пользователей файлов
 
     """
     # Преобразуем features_array в DataFrame, если это np.array
     if not isinstance(x, pd.DataFrame):
         x = pd.DataFrame(x, columns=params)
 
-    pool_test = catboost.Pool(x, cat_features=cat_features,
+    x = catboost_frame(model, x)
+    pool_test = catboost.Pool(x, cat_features=model.get_cat_feature_indices(),
                               feature_names=params)
 
     shap_values = model.get_feature_importance(
@@ -38,5 +39,14 @@ def save_force_plot(model, x, cat_features, params, filename="shap_force.html"):
         show=False
     )
 
-    shap.save_html(filename, force_plot)
+    output = io.StringIO()
+    shap.save_html(output, force_plot)
+    return output.getvalue()
+
+
+def save_force_plot(model, x, cat_features, params, filename="shap_force.html"):
+    """Backward-compatible file export for research scripts."""
+    html = build_force_plot(model, x, params)
+    with open(filename, 'w', encoding='utf-8') as output:
+        output.write(html)
     return filename
